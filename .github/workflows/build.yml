@@ -31,11 +31,9 @@ jobs:
           pip install flet[all]
 
       - name: Build APK
-        # 1. Usamos 'app.py' como argumento principal.
-        # 2. Eliminamos '--no-interactive' para evitar el error de argumentos.
-        # 3. 'yes' se encarga de aceptar la descarga del SDK de Flutter.
+        # Al llamarse main.py, flet build apk lo detecta automáticamente
         run: |
-          yes | flet build apk app.py
+          yes | flet build apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
