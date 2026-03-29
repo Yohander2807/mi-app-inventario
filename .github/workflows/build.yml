@@ -3,8 +3,8 @@ name: Build SOPSoft APK
 on:
   push:
     branches:
-      - main  # Se activa cada vez que subes cambios a la rama principal
-  workflow_dispatch: # Permite ejecutar el build manualmente desde la web de GitHub
+      - main
+  workflow_dispatch:
 
 jobs:
   build:
@@ -30,14 +30,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install flet[all]
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Build APK
-        # Usamos 'yes |' para aceptar automáticamente la descarga del SDK de Flutter 
-        # y '--no-interactive' para que no pida confirmaciones manuales.
+        # 1. Usamos 'app.py' como argumento principal.
+        # 2. Eliminamos '--no-interactive' para evitar el error de argumentos.
+        # 3. 'yes' se encarga de aceptar la descarga del SDK de Flutter.
         run: |
-          yes | flet build apk --no-interactive
+          yes | flet build apk app.py
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
