@@ -1,12 +1,33 @@
 import flet as ft
 import sqlite3
 import os
+import shutil
 
-# --- CONFIGURACIÓN DE BASE DE DATOS ---
+# --- CONFIGURACIÓN DE BASE DE DATOS (Adaptada para Android/Windows) ---
 def get_db_connection():
-    db_path = os.path.join(os.path.dirname(__file__), 'data', 'database.db')
-    if not os.path.exists(os.path.dirname(db_path)):
-        os.makedirs(os.path.dirname(db_path))
+    # En Android, la carpeta de la App es de solo lectura. 
+    # Usamos 'get_user_data_dir' para obtener una ruta con permisos de escritura.
+    data_dir = ft.get_user_data_dir("sopsoft_erp")
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+    
+    db_path = os.path.join(data_dir, "database.db")
+    
+    # Si la base de datos no existe en la ruta de escritura, la copiamos desde el paquete
+    if not os.path.exists(db_path):
+        source_db = os.path.join(os.path.dirname(__file__), "data", "database.db")
+        if os.path.exists(source_db):
+            shutil.copy(source_db, db_path)
+        else:
+            # Si no existe ninguna, la creamos desde cero para evitar el pantallazo negro
+            conn = sqlite3.connect(db_path)
+            conn.execute("CREATE TABLE IF NOT EXISTS configuracion (tasa_dia REAL)")
+            conn.execute("CREATE TABLE IF NOT EXISTS marca (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT)")
+            conn.execute("CREATE TABLE IF NOT EXISTS producto (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT, marca_id INTEGER, precio REAL, FOREIGN KEY(marca_id) REFERENCES marca(id))")
+            conn.execute("INSERT INTO configuracion (tasa_dia) SELECT 36.50 WHERE NOT EXISTS (SELECT 1 FROM configuracion)")
+            conn.commit()
+            conn.close()
+
     conn = sqlite3.connect(db_path)
     conn.execute('PRAGMA journal_mode=WAL;')
     conn.execute('PRAGMA synchronous=NORMAL;')
@@ -20,19 +41,17 @@ def main(page: ft.Page):
     page.bgcolor = "#0f0f0f"
     
     # --- CORRECCIÓN DEL HEADER PARA ANDROID ---
-    # Usamos un padding superior de 50 para evitar la barra de notificaciones
+    # Top=50 para que no choque con la barra de notificaciones
     page.padding = ft.padding.only(top=50, left=20, right=20, bottom=20)
 
+    # Icono de la ventana (solo Windows/Desktop)
     icon_path = os.path.join(os.path.dirname(__file__), "assets", "icon.png")
-    
     if os.path.exists(icon_path):
         page.window.icon = icon_path 
-    else:
-        print(f"Aviso: No se encontró el icono en {icon_path}. Usando icono por defecto.")
     
     tasa_actual = 36.50
 
-    # --- ELEMENTOS DE UI (Contenedores de listas) ---
+    # --- ELEMENTOS DE UI ---
     lista_productos = ft.Column(spacing=10, scroll=ft.ScrollMode.ADAPTIVE, expand=True)
     lista_marcas = ft.Column(spacing=10, scroll=ft.ScrollMode.ADAPTIVE, expand=True)
     text_tasa_header = ft.Text("Cargando...", size=14, weight="bold")
@@ -50,23 +69,27 @@ def main(page: ft.Page):
         page.update()
 
     def obtener_marcas():
-        conn = get_db_connection()
-        marcas = conn.execute("SELECT * FROM marca ORDER BY nombre ASC").fetchall()
-        conn.close()
-        return marcas
+        try:
+            conn = get_db_connection()
+            marcas = conn.execute("SELECT * FROM marca ORDER BY nombre ASC").fetchall()
+            conn.close()
+            return marcas
+        except: return []
 
     def obtener_productos(search=""):
-        conn = get_db_connection()
-        query = """
-            SELECT p.id, p.nombre, m.nombre AS marca, p.marca_id, p.precio 
-            FROM producto p LEFT JOIN marca m ON p.marca_id = m.id 
-            WHERE p.nombre LIKE ? OR m.nombre LIKE ?
-            ORDER BY p.id DESC
-        """
-        search_val = f"%{search}%"
-        productos = conn.execute(query, (search_val, search_val)).fetchall()
-        conn.close()
-        return productos
+        try:
+            conn = get_db_connection()
+            query = """
+                SELECT p.id, p.nombre, m.nombre AS marca, p.marca_id, p.precio 
+                FROM producto p LEFT JOIN marca m ON p.marca_id = m.id 
+                WHERE p.nombre LIKE ? OR m.nombre LIKE ?
+                ORDER BY p.id DESC
+            """
+            search_val = f"%{search}%"
+            productos = conn.execute(query, (search_val, search_val)).fetchall()
+            conn.close()
+            return productos
+        except: return []
 
     # --- REFRESCAR VISTAS ---
     def refrescar_vistas(e=None):
@@ -169,7 +192,7 @@ def main(page: ft.Page):
     # --- UI PRINCIPAL ---
     header = ft.Row([
         ft.Text("Sistema de Inventario", size=24, weight="bold"),
-        ft.Container(content=text_tasa_header, padding=10, bgcolor=ft.Colors.BLUE_900, border_radius=8, 
+        ft.Container(content=text_tasa_header, padding=10, bgcolor=ft.colors.BLUE_900, border_radius=8, 
                      on_click=lambda _: setattr(modal_tasa, "open", True) or page.update())
     ], alignment="spaceBetween")
 
