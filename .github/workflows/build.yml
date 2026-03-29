@@ -1,19 +1,46 @@
-name: Build APK
-on: [push]
+name: Build SOPSoft APK
+
+on:
+  push:
+    branches:
+      - main  # Se activa cada vez que subes cambios a la rama principal
+  workflow_dispatch: # Permite ejecutar el build manualmente desde la web de GitHub
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install Flet
-        run: pip install flet[all]
+
+      - name: Install Flet and Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flet[all]
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Build APK
-        run: flet build apk
-      - name: Upload APK
+        # Usamos 'yes |' para aceptar automáticamente la descarga del SDK de Flutter 
+        # y '--no-interactive' para que no pida confirmaciones manuales.
+        run: |
+          yes | flet build apk --no-interactive
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
+          name: SOPSoft-Release-APK
           path: build/apk/*.apk
