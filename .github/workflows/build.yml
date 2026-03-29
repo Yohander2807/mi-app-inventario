@@ -31,7 +31,8 @@ jobs:
           pip install flet[all]
 
       - name: Build APK
-        # Al llamarse main.py, flet build apk lo detecta automáticamente
+        # Al llamarse main.py, el comando no necesita argumentos extras.
+        # 'yes' acepta la descarga del SDK de Flutter automáticamente.
         run: |
           yes | flet build apk
 

@@ -18,12 +18,14 @@ def main(page: ft.Page):
     page.title = "SOPSoft ERP - Sistema de inventario"
     page.theme_mode = ft.ThemeMode.DARK
     page.bgcolor = "#0f0f0f"
-    page.padding = 20
+    
+    # --- CORRECCIÓN DEL HEADER PARA ANDROID ---
+    # Usamos un padding superior de 50 para evitar la barra de notificaciones
+    page.padding = ft.padding.only(top=50, left=20, right=20, bottom=20)
 
     icon_path = os.path.join(os.path.dirname(__file__), "assets", "icon.png")
     
     if os.path.exists(icon_path):
-        # Esta es la propiedad que establece el icono de la ventana
         page.window.icon = icon_path 
     else:
         print(f"Aviso: No se encontró el icono en {icon_path}. Usando icono por defecto.")
@@ -66,9 +68,8 @@ def main(page: ft.Page):
         conn.close()
         return productos
 
-    # --- REFRESCAR VISTAS (Separadas por contenedor) ---
+    # --- REFRESCAR VISTAS ---
     def refrescar_vistas(e=None):
-        # Actualizar Productos
         lista_productos.controls.clear()
         marcas = obtener_marcas()
         dd_marca.options = [ft.dropdown.Option(key=str(m['id']), text=m['nombre']) for m in marcas]
@@ -79,20 +80,19 @@ def main(page: ft.Page):
                 content=ft.Row([
                     ft.Column([ft.Text(p['nombre'], weight="bold"), ft.Text(p['marca'] or "Generico", size=11, color="grey")], expand=True),
                     ft.Column([ft.Text(f"${p['precio']}", color="green", weight="bold"), ft.Text(f"{p_bs:.2f} Bs", size=10)], horizontal_alignment="end"),
-                    ft.IconButton(ft.Icons.EDIT_OUTLINED, on_click=lambda _, x=p: abrir_editar_prod(x)),
-                    ft.IconButton(ft.Icons.DELETE_OUTLINE, icon_color="red", on_click=lambda _, id=p['id']: eliminar_logic("producto", id))
+                    ft.IconButton(ft.icons.EDIT_OUTLINED, on_click=lambda _, x=p: abrir_editar_prod(x)),
+                    ft.IconButton(ft.icons.DELETE_OUTLINE, icon_color="red", on_click=lambda _, id=p['id']: eliminar_logic("producto", id))
                 ]), padding=12, bgcolor="#1a1a1a", border_radius=10
             ))
 
-        # Actualizar Marcas
         lista_marcas.controls.clear()
         for m in marcas:
             lista_marcas.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.SELL_ROUNDED, color="amber"),
+                    ft.Icon(ft.icons.SELL_ROUNDED, color="amber"),
                     ft.Text(m['nombre'], weight="bold", expand=True),
-                    ft.IconButton(ft.Icons.EDIT_OUTLINED, on_click=lambda _, x=m: abrir_editar_marca(x)),
-                    ft.IconButton(ft.Icons.DELETE_OUTLINE, icon_color="red", on_click=lambda _, id=m['id']: eliminar_logic("marca", id))
+                    ft.IconButton(ft.icons.EDIT_OUTLINED, on_click=lambda _, x=m: abrir_editar_marca(x)),
+                    ft.IconButton(ft.icons.DELETE_OUTLINE, icon_color="red", on_click=lambda _, id=m['id']: eliminar_logic("marca", id))
                 ]), padding=12, bgcolor="#1a1a1a", border_radius=10
             ))
         page.update()
@@ -102,7 +102,6 @@ def main(page: ft.Page):
         modal_tasa.open = False; modal_marca.open = False; modal_producto.open = False
         page.update()
 
-    # Modal Tasa
     txt_nueva_tasa = ft.TextField(label="Nueva Tasa (Bs)", keyboard_type=ft.KeyboardType.NUMBER)
     modal_tasa = ft.AlertDialog(title=ft.Text("Actualizar Tasa"), content=txt_nueva_tasa,
         actions=[ft.TextButton("Cancelar", on_click=cerrar_modal), ft.ElevatedButton("Actualizar", on_click=lambda _: guardar_tasa())])
@@ -113,7 +112,6 @@ def main(page: ft.Page):
             conn.execute("UPDATE configuracion SET tasa_dia = ?", (float(txt_nueva_tasa.value),))
             conn.commit(); conn.close(); obtener_tasa(); cerrar_modal(None); refrescar_vistas()
 
-    # Modal Marcas
     edit_marca_id = ft.Text(""); txt_nombre_marca = ft.TextField(label="Nombre de la Marca")
     modal_marca = ft.AlertDialog(title=ft.Text("Gestionar Marca"), content=txt_nombre_marca,
         actions=[ft.TextButton("Cancelar", on_click=cerrar_modal), ft.ElevatedButton("Guardar", on_click=lambda _: guardar_marca_logic())])
@@ -125,7 +123,6 @@ def main(page: ft.Page):
             else: conn.execute("INSERT INTO marca (nombre) VALUES (?)", (txt_nombre_marca.value,))
             conn.commit(); conn.close(); cerrar_modal(None); refrescar_vistas()
 
-    # Modal Productos
     edit_prod_id = ft.Text(""); txt_prod_nombre = ft.TextField(label="Nombre")
     dd_marca = ft.Dropdown(label="Marca")
     txt_prod_precio_usd = ft.TextField(label="Precio ($)", expand=True, on_change=lambda e: calcular_precios(e, "usd"))
@@ -151,7 +148,6 @@ def main(page: ft.Page):
             else: conn.execute("INSERT INTO producto (nombre, marca_id, precio) VALUES (?, ?, ?)", (txt_prod_nombre.value, dd_marca.value, txt_prod_precio_usd.value))
             conn.commit(); conn.close(); cerrar_modal(None); refrescar_vistas()
 
-    # --- FUNCIONES DE APERTURA ---
     def abrir_editar_prod(p):
         edit_prod_id.value = str(p['id']); txt_prod_nombre.value = p['nombre']; dd_marca.value = str(p['marca_id'])
         txt_prod_precio_usd.value = str(p['precio']); calcular_precios(None, "usd")
@@ -177,9 +173,8 @@ def main(page: ft.Page):
                      on_click=lambda _: setattr(modal_tasa, "open", True) or page.update())
     ], alignment="spaceBetween")
 
-    search_bar = ft.TextField(hint_text="Buscar productos...", prefix_icon=ft.Icons.SEARCH, on_change=refrescar_vistas)
+    search_bar = ft.TextField(hint_text="Buscar productos...", prefix_icon=ft.icons.SEARCH, on_change=refrescar_vistas)
 
-    # --- IMPLEMENTACIÓN DE TABS SEGÚN TU EJEMPLO ---
     tabs_control = ft.Tabs(
         selected_index=0,
         length=2,
@@ -189,16 +184,14 @@ def main(page: ft.Page):
             controls=[
                 ft.TabBar(
                     tabs=[
-                        ft.Tab(label="Productos", icon=ft.Icons.SHOPPING_BAG),
-                        ft.Tab(label="Marcas", icon=ft.Icons.SELL),
+                        ft.Tab(label="Productos", icon=ft.icons.SHOPPING_BAG),
+                        ft.Tab(label="Marcas", icon=ft.icons.SELL),
                     ]
                 ),
                 ft.TabBarView(
                     expand=True,
                     controls=[
-                        # VISTA 1: PRODUCTOS
                         ft.Column([search_bar, lista_productos], expand=True),
-                        # VISTA 2: MARCAS
                         ft.Column([lista_marcas], expand=True),
                     ]
                 )
@@ -215,7 +208,7 @@ def main(page: ft.Page):
         page.update()
 
     page.floating_action_button = ft.FloatingActionButton(
-        icon=ft.Icons.ADD, bgcolor="blue", on_click=lambda _: abrir_modal_nuevo()
+        icon=ft.icons.ADD, bgcolor="blue", on_click=lambda _: abrir_modal_nuevo()
     )
 
     page.overlay.extend([modal_tasa, modal_marca, modal_producto])
