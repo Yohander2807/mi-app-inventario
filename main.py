@@ -2,41 +2,43 @@ import flet as ft
 import sqlite3
 import os
 import shutil
+import sys
 
-# --- CONFIGURACIÓN DE BASE DE DATOS ---
+# --- CONFIGURACIÓN DE BASE DE DATOS (FIX PARA ANDROID) ---
 def get_db_connection():
-    # Reemplazo de get_user_data_dir para compatibilidad total
+    # Determinamos la ruta de almacenamiento según el OS
     if os.name == 'nt':  # Windows
         base_path = os.getenv('APPDATA')
     else:  # Android / Linux
-        base_path = os.path.expanduser('~')
-    
+        # En Android, 'HOME' apunta al directorio interno de la App
+        base_path = os.environ.get("HOME", os.path.expanduser("~"))
+        # Nos aseguramos de entrar en la carpeta de archivos de la App
+        if not base_path.endswith("files"):
+            base_path = os.path.join(base_path, "files")
+
     data_dir = os.path.join(base_path, "sopsoft_erp")
     
     if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
+        os.makedirs(data_dir, exist_ok=True)
     
     db_path = os.path.join(data_dir, "database.db")
     
-    # Copiar base de datos inicial si no existe
+    # Lógica de despliegue: Si la DB no existe en la carpeta de escritura, la traemos de assets
     if not os.path.exists(db_path):
-        source_db = os.path.join(os.path.dirname(__file__), 'data', 'database.db')
+        # Ruta donde Flet guarda los assets empaquetados
+        source_db = os.path.join(os.path.dirname(__file__), "data", "database.db")
+        
         if os.path.exists(source_db):
             shutil.copy(source_db, db_path)
+            # Damos permisos explicitos en Android (777) por si acaso
+            if os.name != 'nt':
+                os.chmod(db_path, 0o777)
 
     conn = sqlite3.connect(db_path)
+    # Optimizaciones para evitar bloqueos en móviles (WAL Mode)
     conn.execute('PRAGMA journal_mode=WAL;')
     conn.execute('PRAGMA synchronous=NORMAL;')
     conn.execute('PRAGMA foreign_keys = ON;')
-    
-    try:
-        cursor = conn.execute("PRAGMA table_info(producto)")
-        columnas = [column[1] for column in cursor.fetchall()]
-        if 'precio_bs' not in columnas:
-            conn.execute("ALTER TABLE producto ADD COLUMN precio_bs REAL DEFAULT 0")
-            conn.commit()
-    except: pass
-        
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -44,7 +46,8 @@ def main(page: ft.Page):
     page.title = "SOPSoft ERP - Sistema de Inventario"
     page.theme_mode = ft.ThemeMode.DARK
     page.bgcolor = "#0f0f0f"
-    page.padding = ft.padding.only(top=50, left=20, right=20, bottom=20)
+    # Padding superior para evitar el notch/barra de estado en Android
+    page.padding = ft.padding.only(top=55, left=15, right=15, bottom=20)
 
     tasa_actual = 36.50
 
@@ -128,12 +131,9 @@ def main(page: ft.Page):
 
     # --- MODALES ---
     def cerrar_modal(e):
-        modal_tasa.open = False
-        modal_marca.open = False
-        modal_producto.open = False
+        modal_tasa.open = modal_marca.open = modal_producto.open = False
         page.update()
 
-    # Tasa
     txt_nueva_tasa = ft.TextField(label="Nueva Tasa (Bs)", prefix="Bs ", keyboard_type=ft.KeyboardType.NUMBER)
     modal_tasa = ft.AlertDialog(
         title=ft.Text("Actualizar Tasa"), content=txt_nueva_tasa,
@@ -146,7 +146,6 @@ def main(page: ft.Page):
             conn.execute("UPDATE configuracion SET tasa_dia = ?", (float(txt_nueva_tasa.value),))
             conn.commit(); conn.close(); obtener_tasa(); cerrar_modal(None); refrescar_vistas()
 
-    # Marca
     edit_marca_id = ft.Text(""); txt_nombre_marca = ft.TextField(label="Nombre de la Marca")
     modal_marca = ft.AlertDialog(
         title=ft.Text("Gestionar Marca"), content=txt_nombre_marca,
@@ -160,7 +159,6 @@ def main(page: ft.Page):
             else: conn.execute("INSERT INTO marca (nombre) VALUES (?)", (txt_nombre_marca.value,))
             conn.commit(); conn.close(); cerrar_modal(None); refrescar_vistas()
 
-    # Producto
     edit_prod_id = ft.Text(""); txt_prod_nombre = ft.TextField(label="Nombre")
     dd_marca = ft.Dropdown(label="Marca")
     txt_prod_precio_usd = ft.TextField(label="Precio ($)", expand=True, prefix="$ ")
@@ -220,18 +218,14 @@ def main(page: ft.Page):
     search_bar = ft.TextField(hint_text="Buscar...", prefix_icon=ft.Icons.SEARCH, on_change=refrescar_vistas, border_radius=12, bgcolor="#161616")
 
     tabs_control = ft.Tabs(
-        selected_index=0,
-        expand=True,
-        length=2,
+        selected_index=0, expand=True, length=2,
         content=ft.Column(
             expand=True,
             controls=[
-                ft.TabBar(
-                    tabs=[
-                        ft.Tab(label="Productos", icon=ft.Icons.SHOPPING_BAG),
-                        ft.Tab(label="Marcas", icon=ft.Icons.SELL),
-                    ]
-                ),
+                ft.TabBar(tabs=[
+                    ft.Tab(label="Productos", icon=ft.Icons.SHOPPING_BAG),
+                    ft.Tab(label="Marcas", icon=ft.Icons.SELL),
+                ]),
                 ft.TabBarView(
                     expand=True,
                     controls=[
@@ -243,6 +237,11 @@ def main(page: ft.Page):
         )
     )
 
+    page.floating_action_button = ft.FloatingActionButton(
+        icon=ft.Icons.ADD, bgcolor=ft.Colors.BLUE, 
+        on_click=lambda _: abrir_modal_nuevo(None)
+    )
+
     def abrir_modal_nuevo(e):
         if tabs_control.selected_index == 0:
             edit_prod_id.value = ""; txt_prod_nombre.value = ""; dd_marca.value = None
@@ -251,15 +250,10 @@ def main(page: ft.Page):
             edit_marca_id.value = ""; txt_nombre_marca.value = ""; modal_marca.open = True
         page.update()
 
-    page.floating_action_button = ft.FloatingActionButton(
-        icon=ft.Icons.ADD, bgcolor=ft.Colors.BLUE, on_click=abrir_modal_nuevo
-    )
-
     page.overlay.extend([modal_tasa, modal_marca, modal_producto])
     page.add(header, ft.Divider(height=10, color=ft.Colors.TRANSPARENT), tabs_control)
     
-    obtener_tasa()
-    refrescar_vistas()
+    obtener_tasa(); refrescar_vistas()
 
 if __name__ == "__main__":
     ft.app(target=main)
