@@ -1,25 +1,41 @@
 import flet as ft
 import sqlite3
 import os
+import shutil
 
 # --- CONFIGURACIÓN DE BASE DE DATOS ---
 def get_db_connection():
-    db_path = os.path.join(os.path.dirname(__file__), 'data', 'database.db')
-    if not os.path.exists(os.path.dirname(db_path)):
-        os.makedirs(os.path.dirname(db_path))
+    # Reemplazo de get_user_data_dir para compatibilidad total
+    if os.name == 'nt':  # Windows
+        base_path = os.getenv('APPDATA')
+    else:  # Android / Linux
+        base_path = os.path.expanduser('~')
     
+    data_dir = os.path.join(base_path, "sopsoft_erp")
+    
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+    
+    db_path = os.path.join(data_dir, "database.db")
+    
+    # Copiar base de datos inicial si no existe
+    if not os.path.exists(db_path):
+        source_db = os.path.join(os.path.dirname(__file__), 'data', 'database.db')
+        if os.path.exists(source_db):
+            shutil.copy(source_db, db_path)
+
     conn = sqlite3.connect(db_path)
     conn.execute('PRAGMA journal_mode=WAL;')
     conn.execute('PRAGMA synchronous=NORMAL;')
     conn.execute('PRAGMA foreign_keys = ON;')
     
-    # --- MIGRACIÓN AUTOMÁTICA ---
-    # Esto añade la columna precio_bs si no existe para que no falle el código
-    cursor = conn.execute("PRAGMA table_info(producto)")
-    columnas = [column[1] for column in cursor.fetchall()]
-    if 'precio_bs' not in columnas:
-        conn.execute("ALTER TABLE producto ADD COLUMN precio_bs REAL DEFAULT 0")
-        conn.commit()
+    try:
+        cursor = conn.execute("PRAGMA table_info(producto)")
+        columnas = [column[1] for column in cursor.fetchall()]
+        if 'precio_bs' not in columnas:
+            conn.execute("ALTER TABLE producto ADD COLUMN precio_bs REAL DEFAULT 0")
+            conn.commit()
+    except: pass
         
     conn.row_factory = sqlite3.Row
     return conn
@@ -28,20 +44,16 @@ def main(page: ft.Page):
     page.title = "SOPSoft ERP - Sistema de Inventario"
     page.theme_mode = ft.ThemeMode.DARK
     page.bgcolor = "#0f0f0f"
-    page.padding = 20
+    page.padding = ft.padding.only(top=50, left=20, right=20, bottom=20)
 
-    icon_path = os.path.join(os.path.dirname(__file__), "assets", "icon.png")
-    if os.path.exists(icon_path):
-        page.window.icon = icon_path 
-    
     tasa_actual = 36.50
 
     # --- ELEMENTOS DE UI ---
     lista_productos = ft.Column(spacing=10, scroll=ft.ScrollMode.ADAPTIVE, expand=True)
     lista_marcas = ft.Column(spacing=10, scroll=ft.ScrollMode.ADAPTIVE, expand=True)
-    text_tasa_header = ft.Text("36.50 Bs", size=16, weight="bold", color="white")
+    text_tasa_header = ft.Text("36.50 Bs", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)
 
-    # --- LÓGICA ---
+    # --- LÓGICA DE DATOS ---
     def obtener_tasa():
         nonlocal tasa_actual
         try:
@@ -54,23 +66,27 @@ def main(page: ft.Page):
         page.update()
 
     def obtener_marcas():
-        conn = get_db_connection()
-        marcas = conn.execute("SELECT * FROM marca ORDER BY nombre ASC").fetchall()
-        conn.close()
-        return marcas
+        try:
+            conn = get_db_connection()
+            marcas = conn.execute("SELECT * FROM marca ORDER BY nombre ASC").fetchall()
+            conn.close()
+            return marcas
+        except: return []
 
     def obtener_productos(search=""):
-        conn = get_db_connection()
-        query = """
-            SELECT p.id, p.nombre, m.nombre AS marca, p.marca_id, p.precio as precio_usd, p.precio_bs 
-            FROM producto p LEFT JOIN marca m ON p.marca_id = m.id 
-            WHERE p.nombre LIKE ? OR m.nombre LIKE ?
-            ORDER BY p.id DESC
-        """
-        search_val = f"%{search}%"
-        productos = conn.execute(query, (search_val, search_val)).fetchall()
-        conn.close()
-        return productos
+        try:
+            conn = get_db_connection()
+            query = """
+                SELECT p.id, p.nombre, m.nombre AS marca, p.marca_id, p.precio as precio_usd, p.precio_bs 
+                FROM producto p LEFT JOIN marca m ON p.marca_id = m.id 
+                WHERE p.nombre LIKE ? OR m.nombre LIKE ?
+                ORDER BY p.id DESC
+            """
+            search_val = f"%{search}%"
+            productos = conn.execute(query, (search_val, search_val)).fetchall()
+            conn.close()
+            return productos
+        except: return []
 
     def refrescar_vistas(e=None):
         lista_productos.controls.clear()
@@ -80,23 +96,21 @@ def main(page: ft.Page):
         for p in obtener_productos(search_bar.value):
             p_usd = float(p['precio_usd'] or 0)
             p_bs_fijo = float(p['precio_bs'] or 0)
-            
-            # Lógica: Si el precio USD > 0, calculamos BS por tasa. Si no, usamos el BS fijo.
             display_usd = f"${p_usd:.2f}"
             display_bs = f"{(p_usd * tasa_actual):.2f} Bs" if p_usd > 0 else f"{p_bs_fijo:.2f} Bs"
 
             lista_productos.controls.append(ft.Container(
                 content=ft.Row([
                     ft.Column([
-                        ft.Text(p['nombre'], weight="bold", size=16),
-                        ft.Text(p['marca'] or "Genérico", size=12, color="grey")
+                        ft.Text(p['nombre'], weight=ft.FontWeight.BOLD, size=16),
+                        ft.Text(p['marca'] or "Genérico", size=12, color=ft.Colors.GREY)
                     ], expand=True),
                     ft.Column([
-                        ft.Text(display_usd, color="green", weight="bold"),
-                        ft.Text(display_bs, size=11, color="blue200" if p_usd == 0 else "white")
-                    ], horizontal_alignment="end"),
+                        ft.Text(display_usd, color=ft.Colors.GREEN, weight=ft.FontWeight.BOLD),
+                        ft.Text(display_bs, size=11, color=ft.Colors.BLUE_200 if p_usd == 0 else ft.Colors.WHITE)
+                    ], horizontal_alignment=ft.CrossAxisAlignment.END),
                     ft.IconButton(ft.Icons.EDIT_OUTLINED, on_click=lambda _, x=p: abrir_editar_prod(x)),
-                    ft.IconButton(ft.Icons.DELETE_OUTLINE, icon_color="red400", on_click=lambda _, id=p['id']: eliminar_logic("producto", id))
+                    ft.IconButton(ft.Icons.DELETE_OUTLINE, icon_color=ft.Colors.RED_400, on_click=lambda _, id=p['id']: eliminar_logic("producto", id))
                 ]), padding=15, bgcolor="#161616", border_radius=12, border=ft.border.all(1, "#252525")
             ))
 
@@ -104,23 +118,27 @@ def main(page: ft.Page):
         for m in marcas:
             lista_marcas.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.SELL_ROUNDED, color="amber"),
-                    ft.Text(m['nombre'], weight="bold", expand=True),
+                    ft.Icon(ft.Icons.SELL_ROUNDED, color=ft.Colors.AMBER),
+                    ft.Text(m['nombre'], weight=ft.FontWeight.BOLD, expand=True),
                     ft.IconButton(ft.Icons.EDIT_OUTLINED, on_click=lambda _, x=m: abrir_editar_marca(x)),
-                    ft.IconButton(ft.Icons.DELETE_OUTLINE, icon_color="red400", on_click=lambda _, id=m['id']: eliminar_logic("marca", id))
+                    ft.IconButton(ft.Icons.DELETE_OUTLINE, icon_color=ft.Colors.RED_400, on_click=lambda _, id=m['id']: eliminar_logic("marca", id))
                 ]), padding=12, bgcolor="#161616", border_radius=10
             ))
         page.update()
 
     # --- MODALES ---
     def cerrar_modal(e):
-        modal_tasa.open = False; modal_marca.open = False; modal_producto.open = False
+        modal_tasa.open = False
+        modal_marca.open = False
+        modal_producto.open = False
         page.update()
 
-    # Modal Tasa
-    txt_nueva_tasa = ft.TextField(label="Nueva Tasa (Bs)", prefix_text="Bs ", keyboard_type=ft.KeyboardType.NUMBER)
-    modal_tasa = ft.AlertDialog(title=ft.Text("Actualizar Tasa"), content=txt_nueva_tasa,
-        actions=[ft.TextButton("Cancelar", on_click=cerrar_modal), ft.ElevatedButton("Actualizar", on_click=lambda _: guardar_tasa())])
+    # Tasa
+    txt_nueva_tasa = ft.TextField(label="Nueva Tasa (Bs)", prefix="Bs ", keyboard_type=ft.KeyboardType.NUMBER)
+    modal_tasa = ft.AlertDialog(
+        title=ft.Text("Actualizar Tasa"), content=txt_nueva_tasa,
+        actions=[ft.TextButton("Cancelar", on_click=cerrar_modal), ft.ElevatedButton("Actualizar", on_click=lambda _: guardar_tasa())]
+    )
 
     def guardar_tasa():
         if txt_nueva_tasa.value:
@@ -128,10 +146,12 @@ def main(page: ft.Page):
             conn.execute("UPDATE configuracion SET tasa_dia = ?", (float(txt_nueva_tasa.value),))
             conn.commit(); conn.close(); obtener_tasa(); cerrar_modal(None); refrescar_vistas()
 
-    # Modal Marcas
+    # Marca
     edit_marca_id = ft.Text(""); txt_nombre_marca = ft.TextField(label="Nombre de la Marca")
-    modal_marca = ft.AlertDialog(title=ft.Text("Gestionar Marca"), content=txt_nombre_marca,
-        actions=[ft.TextButton("Cancelar", on_click=cerrar_modal), ft.ElevatedButton("Guardar", on_click=lambda _: guardar_marca_logic())])
+    modal_marca = ft.AlertDialog(
+        title=ft.Text("Gestionar Marca"), content=txt_nombre_marca,
+        actions=[ft.TextButton("Cancelar", on_click=cerrar_modal), ft.ElevatedButton("Guardar", on_click=lambda _: guardar_marca_logic())]
+    )
 
     def guardar_marca_logic():
         if txt_nombre_marca.value:
@@ -140,18 +160,17 @@ def main(page: ft.Page):
             else: conn.execute("INSERT INTO marca (nombre) VALUES (?)", (txt_nombre_marca.value,))
             conn.commit(); conn.close(); cerrar_modal(None); refrescar_vistas()
 
-    # Modal Productos
+    # Producto
     edit_prod_id = ft.Text(""); txt_prod_nombre = ft.TextField(label="Nombre")
     dd_marca = ft.Dropdown(label="Marca")
-    txt_prod_precio_usd = ft.TextField(label="Precio ($) - Dinámico", expand=True, prefix_text="$ ")
-    txt_prod_precio_bs = ft.TextField(label="Precio (Bs) - Fijo", expand=True, prefix_text="Bs ")
+    txt_prod_precio_usd = ft.TextField(label="Precio ($)", expand=True, prefix="$ ")
+    txt_prod_precio_bs = ft.TextField(label="Precio (Bs)", expand=True, prefix="Bs ")
 
     modal_producto = ft.AlertDialog(
         title=ft.Text("Gestionar Producto"),
         content=ft.Column([
-            txt_prod_nombre, 
-            dd_marca, 
-            ft.Text("Si usas $, el precio en Bs variará con la tasa.", size=11, color="grey"),
+            txt_prod_nombre, dd_marca, 
+            ft.Text("Si usas $, el precio en Bs es dinámico.", size=11, color=ft.Colors.GREY),
             ft.Row([txt_prod_precio_usd, txt_prod_precio_bs])
         ], tight=True, spacing=15),
         actions=[ft.TextButton("Cancelar", on_click=cerrar_modal), ft.ElevatedButton("Guardar", on_click=lambda _: guardar_producto_logic())]
@@ -159,15 +178,12 @@ def main(page: ft.Page):
 
     def guardar_producto_logic():
         if txt_prod_nombre.value and dd_marca.value:
-            usd = float(txt_prod_precio_usd.value or 0)
-            bs = float(txt_prod_precio_bs.value or 0)
+            usd = float(txt_prod_precio_usd.value or 0); bs = float(txt_prod_precio_bs.value or 0)
             conn = get_db_connection()
             if edit_prod_id.value: 
-                conn.execute("UPDATE producto SET nombre=?, marca_id=?, precio=?, precio_bs=? WHERE id=?", 
-                             (txt_prod_nombre.value, dd_marca.value, usd, bs, edit_prod_id.value))
+                conn.execute("UPDATE producto SET nombre=?, marca_id=?, precio=?, precio_bs=? WHERE id=?", (txt_prod_nombre.value, dd_marca.value, usd, bs, edit_prod_id.value))
             else: 
-                conn.execute("INSERT INTO producto (nombre, marca_id, precio, precio_bs) VALUES (?, ?, ?, ?)", 
-                             (txt_prod_nombre.value, dd_marca.value, usd, bs))
+                conn.execute("INSERT INTO producto (nombre, marca_id, precio, precio_bs) VALUES (?, ?, ?, ?)", (txt_prod_nombre.value, dd_marca.value, usd, bs))
             conn.commit(); conn.close(); cerrar_modal(None); refrescar_vistas()
 
     def abrir_editar_prod(p):
@@ -185,56 +201,49 @@ def main(page: ft.Page):
             conn.execute(f"DELETE FROM {tabla} WHERE id=?", (id,))
             conn.commit()
         except:
-            page.snack_bar = ft.SnackBar(ft.Text("Error: El elemento está en uso")); page.snack_bar.open = True
+            page.snack_bar = ft.SnackBar(ft.Text("Elemento en uso")); page.snack_bar.open = True
         conn.close(); refrescar_vistas()
 
-    # --- UI PRINCIPAL (HEADER MEJORADO) ---
-    header = ft.Container(
-        content=ft.Row([
-            ft.Row([
-                ft.Icon(ft.Icons.DASHBOARD_ROUNDED, color="blue", size=30),
-                ft.Column([
-                    ft.Text("SOPSoft ERP", size=20, weight="bold", color="white"),
-                    ft.Text("Gestión de Inventario", size=12, color="blue200"),
-                ], spacing=0)
-            ]),
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.Icons.MONETIZATION_ON_OUTLINED, size=20, color="white"),
-                    text_tasa_header,
-                ], spacing=10),
-                padding=ft.padding.symmetric(10, 20),
-                bgcolor=ft.Colors.with_opacity(0.1, "blue"),
-                border=ft.border.all(1, "blue900"),
-                border_radius=12,
-                on_click=lambda _: setattr(modal_tasa, "open", True) or page.update(),
-                ink=True
-            )
-        ], alignment="spaceBetween"),
-        margin=ft.margin.only(bottom=15)
-    )
+    # --- UI PRINCIPAL ---
+    header = ft.Row([
+        ft.Column([
+            ft.Text("SOPSoft ERP", size=20, weight=ft.FontWeight.BOLD),
+            ft.Text("Inventario", size=12, color=ft.Colors.BLUE_200),
+        ], spacing=0),
+        ft.Container(
+            content=text_tasa_header, padding=ft.padding.symmetric(10, 20),
+            bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.BLUE), border=ft.border.all(1, ft.Colors.BLUE_900),
+            border_radius=12, on_click=lambda _: setattr(modal_tasa, "open", True) or page.update()
+        )
+    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
-    search_bar = ft.TextField(
-        hint_text="Buscar por nombre o marca...", 
-        prefix_icon=ft.Icons.SEARCH, 
-        on_change=refrescar_vistas,
-        border_radius=12,
-        bgcolor="#161616"
-    )
+    search_bar = ft.TextField(hint_text="Buscar...", prefix_icon=ft.Icons.SEARCH, on_change=refrescar_vistas, border_radius=12, bgcolor="#161616")
 
     tabs_control = ft.Tabs(
         selected_index=0,
-        length=2,
         expand=True,
-        tabs=[
-            ft.Tab(text="Productos", icon=ft.Icons.SHOPPING_BAG, 
-                   content=ft.Column([ft.Divider(height=10, color="transparent"), search_bar, lista_productos], expand=True)),
-            ft.Tab(text="Marcas", icon=ft.Icons.SELL, 
-                   content=ft.Column([ft.Divider(height=10, color="transparent"), lista_marcas], expand=True)),
-        ]
+        length=2,
+        content=ft.Column(
+            expand=True,
+            controls=[
+                ft.TabBar(
+                    tabs=[
+                        ft.Tab(label="Productos", icon=ft.Icons.SHOPPING_BAG),
+                        ft.Tab(label="Marcas", icon=ft.Icons.SELL),
+                    ]
+                ),
+                ft.TabBarView(
+                    expand=True,
+                    controls=[
+                        ft.Column([ft.Divider(height=10, color=ft.Colors.TRANSPARENT), search_bar, lista_productos], expand=True),
+                        ft.Column([ft.Divider(height=10, color=ft.Colors.TRANSPARENT), lista_marcas], expand=True),
+                    ]
+                )
+            ]
+        )
     )
 
-    def abrir_modal_nuevo():
+    def abrir_modal_nuevo(e):
         if tabs_control.selected_index == 0:
             edit_prod_id.value = ""; txt_prod_nombre.value = ""; dd_marca.value = None
             txt_prod_precio_usd.value = ""; txt_prod_precio_bs.value = ""; modal_producto.open = True
@@ -243,11 +252,11 @@ def main(page: ft.Page):
         page.update()
 
     page.floating_action_button = ft.FloatingActionButton(
-        icon=ft.Icons.ADD, bgcolor="blue", on_click=lambda _: abrir_modal_nuevo()
+        icon=ft.Icons.ADD, bgcolor=ft.Colors.BLUE, on_click=abrir_modal_nuevo
     )
 
     page.overlay.extend([modal_tasa, modal_marca, modal_producto])
-    page.add(header, tabs_control)
+    page.add(header, ft.Divider(height=10, color=ft.Colors.TRANSPARENT), tabs_control)
     
     obtener_tasa()
     refrescar_vistas()
