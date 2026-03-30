@@ -25,14 +25,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Flet
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install flet[all]
 
       - name: Build APK
-        # 'yes' acepta automáticamente la descarga del SDK de Flutter en el servidor
         run: |
+          # El comando 'yes' acepta las licencias de Android SDK automáticamente
           yes | flet build apk
 
       - name: Upload APK Artifact
