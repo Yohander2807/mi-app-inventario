@@ -26,9 +26,9 @@ jobs:
 
       - name: Build APK
         run: |
-          # Esto acepta las licencias de Android antes de ejecutar Flet
-          yes | sdkmanager --licenses || true
-          flet build apk main.py --project "Sistema Inventario"
+          # El comando 'printf' envía la letra 'y' y un ENTER al proceso de Flet
+          # Esto engaña al instalador para que descargue el SDK de Flutter solo
+          printf 'y\n' | flet build apk main.py --project "Sistema Inventario"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
