@@ -20,15 +20,18 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Instalamos Flet y luego lo que diga tu requirements.txt
           pip install flet
+          # Instala librerías extra si existe el archivo
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Build APK
         run: |
-          # El comando 'printf' envía la letra 'y' y un ENTER al proceso de Flet
-          # Esto engaña al instalador para que descargue el SDK de Flutter solo
-          printf 'y\n' | flet build apk main.py --project "Sistema Inventario"
+          # 1. Aceptamos las licencias de Android que el doctor marcó como pendientes
+          yes | flutter doctor --android-licenses || true
+          
+          # 2. Usamos printf para decir "y" a la instalación del SDK de Flutter
+          # Usamos "." para que Flet busque el main.py en la raíz del repo
+          printf 'y\n' | flet build apk . --project "Sistema Inventario"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
