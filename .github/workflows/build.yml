@@ -1,5 +1,4 @@
-name: Build SOPSoft APK
-
+name: Build Flet APK
 on:
   push:
     branches:
@@ -9,34 +8,30 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flet[all]
+          # Instalamos Flet y luego lo que diga tu requirements.txt
+          pip install flet
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Build APK
         run: |
-          # El comando 'yes' acepta las licencias de Android SDK automáticamente
-          yes | flet build apk
+          # -y acepta licencias de Android SDK automáticamente
+          # --project define el nombre que verás al instalarlo en el celular
+          flet build apk main.py --project "Sistema Inventario" -y
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SOPSoft-Release-APK
+          name: Sistema-Inventario-APK
           path: build/apk/*.apk
