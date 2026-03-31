@@ -1,2 +1,1 @@
-flet==0.21.0
-# SQLite3 ya viene incluido en el Python de Android, no hace falta ponerlo.
+flet
